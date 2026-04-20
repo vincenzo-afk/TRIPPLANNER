@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { doc, getDoc, updateDoc } from "firebase/firestore";
 import { db } from "../services/firebase";
@@ -10,45 +10,65 @@ export default function TripPage() {
   const [trip, setTrip] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [retryAfterSeconds, setRetryAfterSeconds] = useState(null);
+
+  const fetchOrGenerateTrip = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    setRetryAfterSeconds(null);
+    try {
+      const docRef = doc(db, "trips", id);
+      const docSnap = await getDoc(docRef);
+
+      if (!docSnap.exists()) {
+        setError("Trip not found.");
+        return;
+      }
+
+      const tripData = docSnap.data();
+
+      // If itinerary doesn't exist yet, we generate it
+      if (!tripData.itinerary) {
+        const generatedItinerary = await generateItinerary(
+          { name: tripData.destinationName, country: tripData.destinationCountry },
+          tripData.duration,
+          tripData.budget
+        );
+
+        // Update Firebase
+        await updateDoc(docRef, { itinerary: generatedItinerary });
+        tripData.itinerary = generatedItinerary;
+      }
+
+      setTrip(tripData);
+    } catch (err) {
+      console.error(err);
+      setRetryAfterSeconds(err?.retryAfterSeconds ?? null);
+      setError(
+        err?.message || "Something went wrong while loading your itinerary."
+      );
+    } finally {
+      setLoading(false);
+    }
+  }, [id]);
 
   useEffect(() => {
-    async function fetchOrGenerateTrip() {
-      try {
-        const docRef = doc(db, "trips", id);
-        const docSnap = await getDoc(docRef);
+    const t = setTimeout(() => {
+      fetchOrGenerateTrip();
+    }, 0);
+    return () => clearTimeout(t);
+  }, [fetchOrGenerateTrip]);
 
-        if (!docSnap.exists()) {
-          setError("Trip not found.");
-          setLoading(false);
-          return;
-        }
-
-        let tripData = docSnap.data();
-
-        // If itinerary doesn't exist yet, we generate it
-        if (!tripData.itinerary) {
-          const generatedItinerary = await generateItinerary(
-            { name: tripData.destinationName, country: tripData.destinationCountry },
-            tripData.duration,
-            tripData.budget
-          );
-
-          // Update Firebase
-          await updateDoc(docRef, { itinerary: generatedItinerary });
-          tripData.itinerary = generatedItinerary;
-        }
-
-        setTrip(tripData);
-      } catch (err) {
-        console.error(err);
-        setError("Something went wrong while loading your itinerary.");
-      } finally {
-        setLoading(false);
-      }
-    }
-
-    fetchOrGenerateTrip();
-  }, [id]);
+  useEffect(() => {
+    if (!retryAfterSeconds || retryAfterSeconds <= 0) return undefined;
+    const t = setInterval(() => {
+      setRetryAfterSeconds((s) => {
+        if (!s) return s;
+        return s <= 1 ? 0 : s - 1;
+      });
+    }, 1000);
+    return () => clearInterval(t);
+  }, [retryAfterSeconds]);
 
   if (loading) {
     return (
@@ -69,7 +89,26 @@ export default function TripPage() {
       <div className="min-h-screen flex items-center justify-center bg-black">
         <div className="text-center">
           <p className="text-red-400 text-xl mb-4 font-light">{error}</p>
-          <button onClick={() => navigate("/home")} className="text-white/50 hover:text-white underline decoration-white/30 tracking-wide text-sm">Return Home</button>
+          {typeof retryAfterSeconds === "number" && retryAfterSeconds > 0 && (
+            <p className="text-white/60 text-sm mb-4">
+              Retry available in {retryAfterSeconds}s
+            </p>
+          )}
+          <div className="flex items-center justify-center gap-3">
+            <button
+              onClick={() => fetchOrGenerateTrip()}
+              disabled={typeof retryAfterSeconds === "number" && retryAfterSeconds > 0}
+              className="px-6 py-2 bg-white text-black font-semibold rounded-lg disabled:opacity-50"
+            >
+              Try Again
+            </button>
+            <button
+              onClick={() => navigate("/home")}
+              className="px-6 py-2 bg-transparent border border-white/20 text-white font-semibold rounded-lg"
+            >
+              Go Back
+            </button>
+          </div>
         </div>
       </div>
     );

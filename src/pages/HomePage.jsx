@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useAuth } from "../context/AuthContext";
+import { useAuth } from "../hooks/useAuth";
 import { auth } from "../services/firebase";
 
 const tripTypes = [
@@ -31,9 +31,12 @@ export default function HomePage() {
   const navigate = useNavigate();
   const { user } = useAuth();
 
-  const activeTrip = tripTypes[currentSlide];
+  const activeTrip = useMemo(
+    () => tripTypes[currentSlide],
+    [currentSlide]
+  );
 
-  const handleSubmit = (e) => {
+  const handleSubmit = useCallback((e) => {
     e.preventDefault();
     if (duration < 1 || duration > 30) {
       alert("Please enter a duration between 1 and 30 days.");
@@ -46,15 +49,21 @@ export default function HomePage() {
         duration 
       } 
     });
-  };
+  }, [activeTrip.name, budget, duration, navigate]);
 
-  const handleLogout = async () => {
+  const handleLogout = useCallback(async () => {
     await auth.signOut();
     navigate("/login");
-  };
+  }, [navigate]);
 
-  const nextSlide = () => setCurrentSlide((prev) => (prev + 1) % tripTypes.length);
-  const prevSlide = () => setCurrentSlide((prev) => (prev - 1 + tripTypes.length) % tripTypes.length);
+  const nextSlide = useCallback(
+    () => setCurrentSlide((prev) => (prev + 1) % tripTypes.length),
+    []
+  );
+  const prevSlide = useCallback(
+    () => setCurrentSlide((prev) => (prev - 1 + tripTypes.length) % tripTypes.length),
+    []
+  );
 
   return (
     <div className="min-h-screen relative overflow-hidden bg-black font-sans selection:bg-white/30">

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword } from "firebase/auth";
 import { auth } from "../services/firebase";
 import { useNavigate } from "react-router-dom";
@@ -10,8 +10,13 @@ export default function LoginPage() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
+  const emailRef = useRef(null);
 
-  async function handleSubmit(e) {
+  useEffect(() => {
+    emailRef.current?.focus?.();
+  }, [isLogin]);
+
+  const handleSubmit = useCallback(async (e) => {
     e.preventDefault();
     setError("");
     setLoading(true);
@@ -26,7 +31,7 @@ export default function LoginPage() {
       setError(err.message);
     }
     setLoading(false);
-  }
+  }, [email, isLogin, navigate, password]);
 
   return (
     <div className="min-h-screen flex items-center justify-center relative overflow-hidden bg-slate-900">
@@ -77,6 +82,7 @@ export default function LoginPage() {
               <label className="text-slate-200 text-xs font-semibold uppercase tracking-wider block mb-2">Email</label>
               <input
                 type="email"
+                ref={emailRef}
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="you@example.com"

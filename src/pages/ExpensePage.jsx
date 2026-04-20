@@ -1,7 +1,8 @@
 import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { collection, doc, getDoc, addDoc, updateDoc, onSnapshot, query, orderBy, serverTimestamp } from "firebase/firestore";
+import { collection, doc, getDoc, addDoc, updateDoc, onSnapshot, query, orderBy, serverTimestamp, deleteDoc } from "firebase/firestore";
 import { db } from "../services/firebase";
+import ExpenseItem from "../components/ExpenseItem";
 
 export default function ExpensePage() {
   const { id } = useParams();
@@ -21,6 +22,7 @@ export default function ExpensePage() {
   const [description, setDescription] = useState("");
   const [day, setDay] = useState(1);
   const [adding, setAdding] = useState(false);
+  const [deletingExpenseId, setDeletingExpenseId] = useState("");
 
   useEffect(() => {
     async function fetchTrip() {
@@ -70,6 +72,20 @@ export default function ExpensePage() {
       alert("Failed to add expense");
     } finally {
       setAdding(false);
+    }
+  };
+
+  const handleDeleteExpense = async (expenseId) => {
+    const ok = window.confirm("Delete this expense?");
+    if (!ok) return;
+    setDeletingExpenseId(expenseId);
+    try {
+      await deleteDoc(doc(db, "trips", id, "expenses", expenseId));
+    } catch (err) {
+      console.error(err);
+      alert("Failed to delete expense");
+    } finally {
+      setDeletingExpenseId("");
     }
   };
 
@@ -184,15 +200,12 @@ export default function ExpensePage() {
         ) : (
           <div className="space-y-4">
             {expenses.map(exp => (
-              <div key={exp.id} className="flex items-center justify-between bg-transparent border-b border-white/5 py-4 hover:bg-white/[0.02] transition-colors px-4 -mx-4 rounded">
-                <div className="flex flex-col">
-                  <h4 className="text-white font-light text-lg mb-1">{exp.description}</h4>
-                  <p className="text-white/40 text-xs uppercase tracking-wider">Day {exp.day} <span className="mx-2">•</span> {exp.category}</p>
-                </div>
-                <div className="text-right">
-                  <p className="text-white font-medium text-xl">${exp.amount.toFixed(2)}</p>
-                </div>
-              </div>
+              <ExpenseItem
+                key={exp.id}
+                expense={exp}
+                deleting={deletingExpenseId === exp.id}
+                onDelete={() => handleDeleteExpense(exp.id)}
+              />
             ))}
           </div>
         )}

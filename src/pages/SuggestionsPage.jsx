@@ -1,10 +1,12 @@
-import { useState, useEffect } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { useAuth } from "../context/AuthContext";
+import { useAuth } from "../hooks/useAuth";
 import { generateDestinations } from "../services/ai";
 import { getDestinationImage } from "../services/unsplash";
 import { collection, addDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "../services/firebase";
+import TripCard from "../components/TripCard";
+import SkeletonCard from "../components/SkeletonCard";
 
 export default function SuggestionsPage() {
   const location = useLocation();
@@ -15,8 +17,49 @@ export default function SuggestionsPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [retryAfterSeconds, setRetryAfterSeconds] = useState(null);
 
   const preferences = location.state;
+
+  const visibleDestinations = useMemo(
+    () => destinations.filter((d) => d && d.name),
+    [destinations]
+  );
+
+  const fetchDestinations = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    setRetryAfterSeconds(null);
+    try {
+      // 1. Get 3 destinations from Gemini
+      const aiDestinations = await generateDestinations(
+        preferences.budget,
+        preferences.tripType,
+        preferences.duration
+      );
+
+      // 2. Fetch images for each from Unsplash
+      const destinationsWithImages = await Promise.all(
+        aiDestinations.map(async (dest) => {
+          const imageUrl = await getDestinationImage(
+            `${dest.name} ${dest.country} ${preferences.tripType}`
+          );
+          return { ...dest, imageUrl };
+        })
+      );
+
+      setDestinations(destinationsWithImages);
+    } catch (err) {
+      console.error(err);
+      setRetryAfterSeconds(err?.retryAfterSeconds ?? null);
+      setError(
+        err?.message ||
+          "We couldn't generate destinations right now. Please try again."
+      );
+    } finally {
+      setLoading(false);
+    }
+  }, [preferences]);
 
   useEffect(() => {
     if (!preferences) {
@@ -24,37 +67,24 @@ export default function SuggestionsPage() {
       return;
     }
     window.scrollTo(0, 0);
+    const t = setTimeout(() => {
+      fetchDestinations();
+    }, 0);
+    return () => clearTimeout(t);
+  }, [fetchDestinations, navigate, preferences]);
 
-    async function fetchDestinations() {
-      try {
-        // 1. Get 3 destinations from Gemini
-        const aiDestinations = await generateDestinations(
-          preferences.budget,
-          preferences.tripType,
-          preferences.duration
-        );
+  useEffect(() => {
+    if (!retryAfterSeconds || retryAfterSeconds <= 0) return undefined;
+    const t = setInterval(() => {
+      setRetryAfterSeconds((s) => {
+        if (!s) return s;
+        return s <= 1 ? 0 : s - 1;
+      });
+    }, 1000);
+    return () => clearInterval(t);
+  }, [retryAfterSeconds]);
 
-        // 2. Fetch images for each from Unsplash
-        const destinationsWithImages = await Promise.all(
-          aiDestinations.map(async (dest) => {
-            const imageUrl = await getDestinationImage(`${dest.name} ${dest.country} ${preferences.tripType}`);
-            return { ...dest, imageUrl };
-          })
-        );
-
-        setDestinations(destinationsWithImages);
-      } catch (err) {
-        console.error(err);
-        setError(err.message || "We couldn't generate destinations right now. Please try again.");
-      } finally {
-        setLoading(false);
-      }
-    }
-
-    fetchDestinations();
-  }, [preferences, navigate]);
-
-  const handleSelectDestination = async (destination) => {
+  const handleSelectDestination = useCallback(async (destination) => {
     if (!user) return;
     setSaving(true);
     
@@ -87,14 +117,26 @@ export default function SuggestionsPage() {
       alert("Failed to save trip. Please try again.");
       setSaving(false);
     }
-  };
+  }, [navigate, preferences, user]);
 
   if (loading) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-black relative overflow-hidden text-white">
-        <div className="w-16 h-16 border-2 border-white border-t-transparent rounded-full animate-spin mb-8"></div>
-        <h2 className="text-2xl font-light tracking-wide mb-2 animate-pulse">Curating destinations...</h2>
-        <p className="text-white/60 font-light">Finding the perfect {preferences?.tripType} escapes.</p>
+      <div className="min-h-screen py-16 px-6 relative bg-[#0a0a0a] text-white">
+        <div className="max-w-7xl mx-auto">
+          <header className="mb-16 text-center">
+            <h2 className="text-2xl font-light tracking-wide mb-2 animate-pulse">
+              Curating destinations...
+            </h2>
+            <p className="text-white/60 font-light">
+              Finding the perfect {preferences?.tripType} escapes.
+            </p>
+          </header>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+            <SkeletonCard className="min-h-[450px]" />
+            <SkeletonCard className="min-h-[450px]" />
+            <SkeletonCard className="min-h-[450px]" />
+          </div>
+        </div>
       </div>
     );
   }
@@ -104,7 +146,26 @@ export default function SuggestionsPage() {
       <div className="min-h-screen flex flex-col items-center justify-center bg-black">
         <div className="bg-white/10 border border-white/20 text-white p-6 rounded-xl max-w-md text-center backdrop-blur-md">
           <p className="mb-4">{error}</p>
-          <button onClick={() => navigate("/home")} className="px-6 py-2 bg-white text-black font-semibold rounded-lg">Go Back</button>
+          {typeof retryAfterSeconds === "number" && retryAfterSeconds > 0 && (
+            <p className="text-white/60 text-sm mb-4">
+              Retry available in {retryAfterSeconds}s
+            </p>
+          )}
+          <div className="flex items-center justify-center gap-3">
+            <button
+              onClick={() => fetchDestinations()}
+              disabled={typeof retryAfterSeconds === "number" && retryAfterSeconds > 0}
+              className="px-6 py-2 bg-white text-black font-semibold rounded-lg disabled:opacity-50"
+            >
+              Try Again
+            </button>
+            <button
+              onClick={() => navigate("/home")}
+              className="px-6 py-2 bg-transparent border border-white/20 text-white font-semibold rounded-lg"
+            >
+              Go Back
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -127,24 +188,16 @@ export default function SuggestionsPage() {
         </header>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-          {destinations.map((dest, idx) => {
+          {visibleDestinations.map((dest, idx) => {
             return (
-              <div 
+              <TripCard 
                 key={idx}
-                className="relative rounded-2xl overflow-hidden group cursor-pointer border border-white/10 hover:border-white/30 transition-all duration-700 hover:-translate-y-2 shadow-2xl"
                 onClick={() => handleSelectDestination(dest)}
+                imageUrl={dest.imageUrl}
+                className="hover:-translate-y-2"
               >
-                {/* Background Image */}
-                <div 
-                  className="absolute inset-0 bg-cover bg-center transition-transform duration-1000 group-hover:scale-105"
-                  style={{ backgroundImage: `url(${dest.imageUrl})` }}
-                />
-                
-                {/* Subtle Realistic Dark Overlay at bottom */}
-                <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-black/10 opacity-90 transition-opacity duration-500 group-hover:opacity-100" />
-
                 {/* Content */}
-                <div className="relative z-10 p-8 h-full flex flex-col justify-end min-h-[450px]">
+                <div className="p-8 h-full flex flex-col justify-end min-h-[450px]">
                   <div className="mb-auto">
                     <span className="inline-block px-3 py-1 rounded bg-black/40 backdrop-blur-md text-white/80 text-[10px] uppercase tracking-[0.2em] mb-4 border border-white/10">
                       Option 0{idx + 1}
@@ -174,7 +227,7 @@ export default function SuggestionsPage() {
                     </button>
                   </div>
                 </div>
-              </div>
+              </TripCard>
             );
           })}
         </div>
