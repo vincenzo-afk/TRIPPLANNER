@@ -85,7 +85,7 @@ export default function HomePage() {
       {/* Header */}
       <header className="p-6 md:px-12 flex justify-between items-center relative z-20">
         <h1 className="text-2xl font-extrabold text-white tracking-widest drop-shadow-md">
-          TRIPIFY
+          TRIPPLANNER
         </h1>
         <div className="flex items-center gap-6">
           <span className="text-white/80 text-sm hidden sm:block tracking-wide">

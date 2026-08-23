@@ -49,7 +49,7 @@ export default function LoginPage() {
         
         {/* Logo */}
         <div className="text-center mb-10">
-          <h1 className="text-5xl font-extrabold text-white tracking-tight drop-shadow-lg mb-3">Tripify</h1>
+          <h1 className="text-5xl font-extrabold text-white tracking-tight drop-shadow-lg mb-3">TRIPPLANNER</h1>
           <p className="text-slate-300 text-lg font-light tracking-wide drop-shadow">Discover the world, beautifully.</p>
         </div>
 

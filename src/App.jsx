@@ -17,7 +17,7 @@ function ProtectedRoute({ children }) {
 function Loader() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-slate-900">
-      <div className="text-white text-xl animate-pulse">Loading Tripify...</div>
+      <div className="text-white text-xl animate-pulse">Loading TRIPPLANNER...</div>
     </div>
   );
 }
